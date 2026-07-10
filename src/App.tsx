@@ -106,26 +106,7 @@ const INITIAL_INVOICES: CardInvoice[] = [
   },
 ];
 
-const INITIAL_PLANNED: PlannedInstallment[] = [
-  {
-    id: "plan-1",
-    description: "Ar Condicionado Split 12000 BTUs",
-    totalValue: 1800,
-    installmentTotal: 6,
-    installmentValue: 300,
-    firstChargeMonth: "2026-08",
-    status: "simulated",
-  },
-  {
-    id: "plan-2",
-    description: "Passagem Aérea Férias",
-    totalValue: 1200,
-    installmentTotal: 4,
-    installmentValue: 300,
-    firstChargeMonth: "2026-07",
-    status: "simulated",
-  },
-];
+const INITIAL_PLANNED: PlannedInstallment[] = [];
 
 export default function App() {
   const [selectedMonth, setSelectedMonth] = useState<string>("2026-07");

@@ -106,9 +106,17 @@ export function calculateReport(
   invoices: CardInvoice[],
   plannedInstallments: PlannedInstallment[]
 ): MonthlyReportSummary {
-  // 1. Renda total para este mês
-  const monthlyIncomes = incomes.filter((inc) => inc.month === month);
-  const totalIncome = monthlyIncomes.reduce((acc, curr) => acc + curr.value, 0);
+  // 1. Renda total para este mês considerando recorrência
+  const totalIncome = incomes
+    .filter((inc) => {
+      const isRecurrent = !inc.recurrence || inc.recurrence === "monthly";
+      if (isRecurrent) {
+        return inc.month <= month; // Ativo a partir do mês de cadastro
+      } else {
+        return inc.month === month; // Apenas no próprio mês
+      }
+    })
+    .reduce((acc, curr) => acc + curr.value, 0);
 
   // 2. Contas fixas ativas
   // Contas fixas são recorrentes e ativas
@@ -167,50 +175,101 @@ export function parseValorBR(v: string): number {
   return parseFloat(v.replace(/\./g, "").replace(",", "."));
 }
 
-// Regexes fornecidas na especificação técnica do Carrefour:
-// Linha com parcela: "09/10 037 - JDI - JUNDIAI - 5/10 259,70"
-const INSTALLMENT_REGEX =
-  /^(\d{2}\/\d{2})\s+(.+?)\s*-?\s*(\d{1,2})\/(\d{1,2})\s+([\d.]+,\d{2})(-?)\s*$/;
-
-// Linha sem parcela: "16/01 Pagamento Banco CSF 1.679,39-"
-const SIMPLE_REGEX =
-  /^(\d{2}\/\d{2})\s+(.+?)\s+([\d.]+,\d{2})(-?)\s*$/;
+// Dicionário de meses em português para identificar datas em formato de texto (Ex: "10 JAN", "15 MAI")
+const MESES_PT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
 export function parseInvoiceLine(line: string): ParsedLine | null {
   const clean = line.trim();
-  if (!clean) return null;
+  if (!clean || clean.length < 8) return null;
 
-  const installmentMatch = clean.match(INSTALLMENT_REGEX);
-  if (installmentMatch) {
-    const [, date, desc, curr, total, valueStr, sign] = installmentMatch;
-    const installmentValue = parseValorBR(valueStr);
-    const currNum = parseInt(curr, 10);
-    const totalNum = parseInt(total, 10);
-    return {
-      date,
-      description: desc.trim().replace(/-+$/, "").trim(),
-      isInstallment: true,
-      installmentCurrent: currNum,
-      installmentTotal: totalNum,
-      installmentValue,
-      totalValue: installmentValue * totalNum,
-      isCredit: sign === "-",
-    };
+  // Ignorar termos comuns de pagamentos, créditos, limites, etc.
+  const ignorePatterns = [
+    /pagamento/i, /recebido/i, /efetuado/i, /credito/i, /crédito/i, /estorno/i,
+    /deb\.aut/i, /débito automático/i, /saldo anterior/i, /total da fatura/i,
+    /pagamento mínimo/i, /limite de crédito/i, /encargos/i, /juros/i, /iof/i
+  ];
+  if (ignorePatterns.some(pat => pat.test(clean))) {
+    return null;
   }
 
-  const simpleMatch = clean.match(SIMPLE_REGEX);
-  if (simpleMatch) {
-    const [, date, desc, valueStr, sign] = simpleMatch;
-    return {
-      date,
-      description: desc.trim(),
-      isInstallment: false,
-      totalValue: parseValorBR(valueStr),
-      isCredit: sign === "-",
-    };
+  // 1. Tenta extrair a data (Ex: "25/08", "05/12", "12 JAN", "12 Mai")
+  let dateFound = "";
+  let dateRegexMatch = clean.match(/(\d{2})\/(\d{2})/); // Formato "DD/MM"
+  
+  if (dateRegexMatch) {
+    dateFound = dateRegexMatch[0];
+  } else {
+    // Tenta formato "DD MMM" ou "DD de MMM"
+    const textDateRegex = new RegExp(`(\\d{1,2})\\s*(?:de)?\\s*(${MESES_PT.join("|")})`, "i");
+    const textDateMatch = clean.match(textDateRegex);
+    if (textDateMatch) {
+      const day = textDateMatch[1].padStart(2, "0");
+      const monthIndex = MESES_PT.indexOf(textDateMatch[2].toLowerCase()) + 1;
+      const month = String(monthIndex).padStart(2, "0");
+      dateFound = `${day}/${month}`;
+    }
   }
 
-  return null;
+  if (!dateFound) return null;
+
+  // 2. Tenta extrair o valor monetário com vírgula decimal (Ex: "1.250,50", "30,00", "5,90")
+  // Captura também um sinal de "-" no final que costuma denotar créditos ou estornos
+  const valueRegex = /([\d.]+,\d{2})(-?)\s*$/;
+  // Fallback se o valor estiver em algum outro ponto da linha
+  const valueRegexGlobal = /([\d.]+,\d{2})(-?)/;
+  
+  let valueMatch = clean.match(valueRegex) || clean.match(valueRegexGlobal);
+  if (!valueMatch) return null;
+
+  const valueStr = valueMatch[1];
+  const isCredit = valueMatch[2] === "-";
+  const extractedValue = parseValorBR(valueStr);
+
+  if (isNaN(extractedValue) || extractedValue <= 0) return null;
+
+  // 3. Tenta extrair dados de parcelamento (Ex: "03/10", "1 de 5", "parc 2/12")
+  const parcelRegex = /(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/i;
+  
+  // Limpa o resto da linha para achar a descrição, tirando a data e o valor
+  let description = clean
+    .replace(dateFound, "")
+    .replace(valueMatch[0], "")
+    .replace(/r\$\s*/i, "")
+    .trim();
+
+  // Verifica se há parcelas
+  const parcelMatch = description.match(parcelRegex);
+  
+  if (parcelMatch) {
+    const current = parseInt(parcelMatch[1], 10);
+    const total = parseInt(parcelMatch[2], 10);
+
+    // Valida se os números de parcela fazem sentido lógico
+    if (current > 0 && total >= current && total <= 120) {
+      // Remove o trecho de parcelas da descrição para deixá-la limpa
+      description = description.replace(parcelMatch[0], "").replace(/\s*-\s*$/, "").trim();
+      
+      return {
+        date: dateFound,
+        description: description || "Gasto Cartão",
+        isInstallment: true,
+        installmentCurrent: current,
+        installmentTotal: total,
+        installmentValue: extractedValue,
+        totalValue: Number((extractedValue * total).toFixed(2)),
+        isCredit
+      };
+    }
+  }
+
+  // Se não achou parcelas, trata como compra à vista
+  return {
+    date: dateFound,
+    description: description.replace(/\s*-\s*$/, "").trim() || "Gasto Cartão",
+    isInstallment: false,
+    totalValue: extractedValue,
+    isCredit
+  };
 }
 
 export function getPurchaseFullDate(purchaseDateDM: string, referenceMonth: string): string {

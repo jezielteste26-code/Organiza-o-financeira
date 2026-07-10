@@ -19,6 +19,7 @@ export interface IncomeSource {
   label: string; // ex: "Freela A"
   value: number;
   month: string; // formato "AAAA-MM" (ex: "2026-07")
+  recurrence?: "monthly" | "single"; // "monthly" = recorrente, "single" = avulsa
 }
 
 // Compra individual do cartão (incluída em uma fatura)

@@ -121,12 +121,27 @@ export function calcularProjecao(input: ProjecaoInput): ResultadoProjecao {
   const meses: MesProjetado[] = Array.from({ length: 12 }, (_, i) => {
     const mes = addMonths(mesInicial, i);
 
+    // Calcula o total de rendas para este mês baseado em recorrência
+    const totalRendas = Number(
+      rendas
+        .filter((r) => {
+          const isRecurrent = !r.recurrence || r.recurrence === "monthly";
+          if (isRecurrent) {
+            return r.month <= mes; // Começa no mês de cadastro e continua
+          } else {
+            return r.month === mes; // Apenas no próprio mês
+          }
+        })
+        .reduce((acc, r) => acc + Number(r.value), 0)
+        .toFixed(2)
+    );
+
     // Fatura de cartão = 0 (placeholder para atualização manual posterior)
     const faturaCartao: number = 0;
 
     // Saldo líquido do mês
     const saldoMensal: number = Number(
-      (rendaMensalBase - custoFixoMensal - faturaCartao).toFixed(2)
+      (totalRendas - custoFixoMensal - faturaCartao).toFixed(2)
     );
 
     // Saldo acumulado: parte do mês anterior
@@ -139,7 +154,7 @@ export function calcularProjecao(input: ProjecaoInput): ResultadoProjecao {
 
     return {
       mes,
-      totalRendas: rendaMensalBase,
+      totalRendas,
       totalContasFixas: custoFixoMensal,
       faturaCartao,
       saldoMensal,
@@ -236,8 +251,18 @@ export function rotacionarJanelaTemporal(
   const novosMeses: MesProjetado[] = Array.from({ length: mesesEmFalta }, (_, i) => {
     // A referência de início para adicionar meses é a partir do último mês disponível
     const proximoMes = addMonths(ultimoMesDisponivel, mesesFuturosRestantes.length > 0 ? i + 1 : i);
+    
+    // Calcula a receita do novo mês considerando a recorrência
+    const totalRendas = Number(
+      mesesSalvos.length > 0
+        ? // Se já tínhamos meses calculados, podemos pegar a receita recorrente
+          // ou recalculamos com base no v2. Aqui passamos rendaMensal pré-calculada de recorrentes
+          rendaMensal
+        : rendaMensal
+    );
+
     const faturaCartao = 0;
-    const saldoMensal = Number((rendaMensal - custoFixo - faturaCartao).toFixed(2));
+    const saldoMensal = Number((totalRendas - custoFixo - faturaCartao).toFixed(2));
     
     // Tratamento de Déficit: O saldo do mês anterior (positivo ou negativo) é herdado
     const saldoAcumulado = Number((saldoAcumuladoAnterior + saldoMensal).toFixed(2));
@@ -245,7 +270,7 @@ export function rotacionarJanelaTemporal(
 
     return {
       mes: proximoMes,
-      totalRendas: rendaMensal,
+      totalRendas,
       totalContasFixas: custoFixo,
       faturaCartao,
       saldoMensal,

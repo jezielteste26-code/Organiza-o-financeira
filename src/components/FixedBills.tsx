@@ -34,6 +34,7 @@ export default function FixedBills({
   // Estados para o Formulário de Receitas (Incomes)
   const [incomeLabel, setIncomeLabel] = useState("");
   const [incomeValue, setIncomeValue] = useState("");
+  const [incomeRecurrence, setIncomeRecurrence] = useState<"monthly" | "single">("monthly");
   const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
 
   // Categorias padrão para contas fixas
@@ -111,7 +112,7 @@ export default function FixedBills({
     if (editingIncomeId) {
       setIncomes((prev) =>
         prev.map((inc) =>
-          inc.id === editingIncomeId ? { ...inc, label: incomeLabel, value: val } : inc
+          inc.id === editingIncomeId ? { ...inc, label: incomeLabel, value: val, recurrence: incomeRecurrence } : inc
         )
       );
       setEditingIncomeId(null);
@@ -121,18 +122,21 @@ export default function FixedBills({
         label: incomeLabel,
         value: val,
         month: selectedMonth,
+        recurrence: incomeRecurrence,
       };
       setIncomes((prev) => [...prev, newIncome]);
     }
 
     setIncomeLabel("");
     setIncomeValue("");
+    setIncomeRecurrence("monthly");
   };
 
   const handleEditIncome = (inc: IncomeSource) => {
     setEditingIncomeId(inc.id);
     setIncomeLabel(inc.label);
     setIncomeValue(inc.value.toString());
+    setIncomeRecurrence(inc.recurrence || "monthly");
   };
 
   const handleDeleteIncome = (id: string) => {
@@ -141,11 +145,19 @@ export default function FixedBills({
       setEditingIncomeId(null);
       setIncomeLabel("");
       setIncomeValue("");
+      setIncomeRecurrence("monthly");
     }
   };
 
-  // Filtra receitas para o mês selecionado
-  const currentMonthIncomes = incomes.filter((inc) => inc.month === selectedMonth);
+  // Filtra receitas para o mês selecionado considerando a recorrência
+  const currentMonthIncomes = incomes.filter((inc) => {
+    const isRecurrent = !inc.recurrence || inc.recurrence === "monthly";
+    if (isRecurrent) {
+      return inc.month <= selectedMonth; // Ativa a partir do mês em que foi criada
+    } else {
+      return inc.month === selectedMonth; // Apenas no próprio mês
+    }
+  });
 
   const totalIncome = currentMonthIncomes.reduce((acc, curr) => acc + curr.value, 0);
   const totalFixedBills = fixedBills.filter((b) => b.active).reduce((acc, curr) => acc + curr.value, 0);
@@ -195,6 +207,18 @@ export default function FixedBills({
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 mb-1">Tipo de Renda</label>
+              <select
+                value={incomeRecurrence}
+                onChange={(e) => setIncomeRecurrence(e.target.value as "monthly" | "single")}
+                className="w-full px-3 py-2.5 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-800 focus:outline-hidden focus:border-zinc-900"
+              >
+                <option value="monthly">Recorrência Mensal (Repete nos meses futuros)</option>
+                <option value="single">Renda Avulsa (Válida apenas para este mês)</option>
+              </select>
+            </div>
+
             <div className="flex justify-end gap-2 pt-1">
               {editingIncomeId && (
                 <button
@@ -203,6 +227,7 @@ export default function FixedBills({
                     setEditingIncomeId(null);
                     setIncomeLabel("");
                     setIncomeValue("");
+                    setIncomeRecurrence("monthly");
                   }}
                   className="px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-800 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all"
                 >
@@ -230,33 +255,47 @@ export default function FixedBills({
               <p className="text-xs text-zinc-450 py-6 text-center font-bold">Nenhuma renda cadastrada para este mês.</p>
             ) : (
               <div className="space-y-2">
-                {currentMonthIncomes.map((inc) => (
-                  <div key={inc.id} className="flex justify-between items-center p-3 bg-white border border-zinc-200 hover:border-zinc-350 hover:shadow-2xs rounded-xl transition-all duration-200 group">
-                    <div>
-                      <h5 className="text-xs font-bold text-zinc-800">{inc.label}</h5>
-                      <span className="text-[9px] text-zinc-400 uppercase tracking-wider font-semibold">Receita Mensal</span>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-xs font-black text-emerald-600 font-mono">{formatCurrency(inc.value)}</span>
-                      <div className="flex gap-0.5">
-                        <button
-                          onClick={() => handleEditIncome(inc)}
-                          className="p-1.5 text-zinc-400 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-all"
-                          title="Editar"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteIncome(inc.id)}
-                          className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                          title="Excluir"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                {currentMonthIncomes.map((inc) => {
+                  const isRecurrent = !inc.recurrence || inc.recurrence === "monthly";
+                  return (
+                    <div key={inc.id} className="flex justify-between items-center p-3 bg-white border border-zinc-200 hover:border-zinc-350 hover:shadow-2xs rounded-xl transition-all duration-200 group">
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h5 className="text-xs font-bold text-zinc-800">{inc.label}</h5>
+                          <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${
+                            isRecurrent 
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-100" 
+                              : "bg-zinc-100 text-zinc-500 border border-zinc-200"
+                          }`}>
+                            {isRecurrent ? "Recorrente" : "Avulsa"}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-zinc-400 uppercase tracking-wider font-semibold">
+                          {isRecurrent ? "Receita Mensal Fixa" : `Renda Única em ${formatMonth(inc.month)}`}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-xs font-black text-emerald-600 font-mono">{formatCurrency(inc.value)}</span>
+                        <div className="flex gap-0.5">
+                          <button
+                            onClick={() => handleEditIncome(inc)}
+                            className="p-1.5 text-zinc-400 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-all"
+                            title="Editar"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteIncome(inc.id)}
+                            className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                            title="Excluir"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

@@ -44,6 +44,8 @@ jobs:
             npx cap init "Controle Financeiro" "com.controle.financeiro" --web-dir=dist
             npx cap add android
           fi
+          # Gera os ícones nativos do Android a partir de assets/icon.png
+          npx @capacitor/assets generate --android
           npx cap sync android
 
       - name: Fix Kotlin stdlib duplicate classes
