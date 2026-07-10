@@ -8,6 +8,8 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import fs from "fs/promises";
+import { existsSync } from "fs";
 
 dotenv.config();
 
@@ -217,6 +219,59 @@ Instruções críticas:
         success: false,
         error: error?.message || "Erro desconhecido ao processar fatura.",
       });
+    }
+  });
+
+  // API - Sincronização compartilhada simples
+  const SYNC_DIR = path.join(process.cwd(), "sync_data");
+
+  // Garante que o diretório de sincronização existe
+  try {
+    if (!existsSync(SYNC_DIR)) {
+      await fs.mkdir(SYNC_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.error("Erro ao criar diretório sync_data:", err);
+  }
+
+  // Sanitiza o código para evitar Path Traversal
+  const sanitizeCode = (code: string) => {
+    return code.replace(/[^a-zA-Z0-9_-]/g, "");
+  };
+
+  app.get("/api/sync/:code", async (req, res) => {
+    try {
+      const code = sanitizeCode(req.params.code);
+      if (!code) {
+        res.status(400).json({ success: false, error: "Código inválido." });
+        return;
+      }
+      const filePath = path.join(SYNC_DIR, `data_${code}.json`);
+      if (existsSync(filePath)) {
+        const fileContent = await fs.readFile(filePath, "utf-8");
+        res.json({ success: true, data: JSON.parse(fileContent) });
+      } else {
+        res.status(404).json({ success: false, error: "Nenhum dado encontrado para este código." });
+      }
+    } catch (error: any) {
+      console.error("Erro ao buscar dados sincronizados:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/sync/:code", async (req, res) => {
+    try {
+      const code = sanitizeCode(req.params.code);
+      if (!code) {
+        res.status(400).json({ success: false, error: "Código inválido." });
+        return;
+      }
+      const filePath = path.join(SYNC_DIR, `data_${code}.json`);
+      await fs.writeFile(filePath, JSON.stringify(req.body, null, 2), "utf-8");
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Erro ao salvar dados de sincronização:", error);
+      res.status(500).json({ success: false, error: error.message });
     }
   });
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { FixedBill, IncomeSource, CardInvoice, PlannedInstallment, MesCalculadoSalvo, AppStorageSchema } from "./types";
 import { formatMonth, addMonths } from "./utils";
 import {
@@ -19,13 +19,15 @@ import {
 } from "./services/storageService";
 import { calcularProjecao, rotacionarJanelaTemporal } from "./services/calculationEngine";
 import { exportarBackupDoApp } from "./services/backupService";
+import { pushToServer } from "./services/syncService";
 import Dashboard from "./components/Dashboard";
 import FixedBills from "./components/FixedBills";
 import CardInvoices from "./components/CardInvoices";
 import PlannedInstallments from "./components/PlannedInstallments";
 import Reports from "./components/Reports";
 import Onboarding from "./components/Onboarding";
-import { Landmark, LayoutDashboard, Wallet, CreditCard, ArrowUpRight, BarChart3, ChevronLeft, ChevronRight, Menu, X, Coins, Plus } from "lucide-react";
+import SyncManager from "./components/SyncManager";
+import { LayoutDashboard, Wallet, CreditCard, ArrowUpRight, BarChart3, ChevronLeft, ChevronRight, Coins, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 // --- Dados Iniciais de Demonstração (Caso o localStorage esteja vazio) ---
@@ -114,6 +116,8 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [fabOpen, setFabOpen] = useState<boolean>(false);
   const [storageError, setStorageError] = useState<boolean>(false);
+  // Versão dos dados — incrementada em cada mudança para disparar push de sincronização
+  const [dataVersion, setDataVersion] = useState<number>(0);
 
   // ─── Verificação de Primeiro Acesso (schema v2) ────────────────────────────
   // Usa configuracoesStorage.isOnboardingCompleto() como fonte de verdade.
@@ -247,41 +251,58 @@ export default function App() {
     try {
       fixedBillsStorage.saveAll(fixedBills);
     } catch (e: any) {
-      if (e.message === "STORAGE_FULL") {
-        setStorageError(true);
-      }
+      if (e.message === "STORAGE_FULL") setStorageError(true);
     }
+    setDataVersion((v) => v + 1);
   }, [fixedBills]);
 
   useEffect(() => {
     try {
       incomesStorage.saveAll(incomes);
     } catch (e: any) {
-      if (e.message === "STORAGE_FULL") {
-        setStorageError(true);
-      }
+      if (e.message === "STORAGE_FULL") setStorageError(true);
     }
+    setDataVersion((v) => v + 1);
   }, [incomes]);
 
   useEffect(() => {
     try {
       invoicesStorage.saveAll(invoices);
     } catch (e: any) {
-      if (e.message === "STORAGE_FULL") {
-        setStorageError(true);
-      }
+      if (e.message === "STORAGE_FULL") setStorageError(true);
     }
+    setDataVersion((v) => v + 1);
   }, [invoices]);
 
   useEffect(() => {
     try {
       plannedInstallmentsStorage.saveAll(plannedInstallments);
     } catch (e: any) {
-      if (e.message === "STORAGE_FULL") {
-        setStorageError(true);
-      }
+      if (e.message === "STORAGE_FULL") setStorageError(true);
     }
+    setDataVersion((v) => v + 1);
   }, [plannedInstallments]);
+
+  // ─── Snapshot atual do app para sincronização ────────────────────────────────
+  const currentAppData = useMemo(() => ({
+    fixedBills,
+    incomes,
+    invoices,
+    plannedInstallments,
+  }), [fixedBills, incomes, invoices, plannedInstallments]);
+
+  // ─── Callback: ao ativar o sync, faz push inicial dos dados locais ──────────
+  const handleSyncActivated = useCallback(async (_code: string) => {
+    await pushToServer(currentAppData);
+  }, [currentAppData]);
+
+  // ─── Callback: ao receber dados do servidor, aplica no estado do app ─────────
+  const handleRemoteData = useCallback((data: any) => {
+    if (data.fixedBills) setFixedBills(data.fixedBills);
+    if (data.incomes) setIncomes(data.incomes);
+    if (data.invoices) setInvoices(data.invoices);
+    if (data.plannedInstallments) setPlannedInstallments(data.plannedInstallments);
+  }, []);
 
   // Navegação rápida de meses
   const handlePrevMonth = () => {
@@ -368,27 +389,37 @@ export default function App() {
           </div>
         </div>
 
-        {/* Month Selector Widget */}
-        <div className="flex items-center gap-1 bg-zinc-50 border border-zinc-200/50 rounded-xl p-0.5 shrink-0">
-          <button
-            onClick={handlePrevMonth}
-            className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-lg transition-all"
-            title="Mês Anterior"
-          >
-            <ChevronLeft className="w-4.5 h-4.5 shrink-0" />
-          </button>
-          
-          <span className="text-[11px] sm:text-xs font-bold text-zinc-700 px-2 min-w-[95px] sm:min-w-[110px] text-center select-none truncate">
-            {formatMonth(selectedMonth)}
-          </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Month Selector Widget */}
+          <div className="flex items-center gap-1 bg-zinc-50 border border-zinc-200/50 rounded-xl p-0.5">
+            <button
+              onClick={handlePrevMonth}
+              className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-lg transition-all"
+              title="Mês Anterior"
+            >
+              <ChevronLeft className="w-4.5 h-4.5 shrink-0" />
+            </button>
+            
+            <span className="text-[11px] sm:text-xs font-bold text-zinc-700 px-2 min-w-[95px] sm:min-w-[110px] text-center select-none truncate">
+              {formatMonth(selectedMonth)}
+            </span>
 
-          <button
-            onClick={handleNextMonth}
-            className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-lg transition-all"
-            title="Próximo Mês"
-          >
-            <ChevronRight className="w-4.5 h-4.5 shrink-0" />
-          </button>
+            <button
+              onClick={handleNextMonth}
+              className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-lg transition-all"
+              title="Próximo Mês"
+            >
+              <ChevronRight className="w-4.5 h-4.5 shrink-0" />
+            </button>
+          </div>
+
+          {/* Botão de Sincronização Compartilhada */}
+          <SyncManager
+            onSyncActivated={handleSyncActivated}
+            onRemoteDataReceived={handleRemoteData}
+            currentAppData={currentAppData}
+            dataVersion={dataVersion}
+          />
         </div>
       </header>
 
