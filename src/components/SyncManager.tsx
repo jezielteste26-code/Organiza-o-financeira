@@ -56,13 +56,23 @@ export default function SyncManager({
 
   // ─── Fechar painel ao clicar fora ──────────────────────────────────────────
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+    function handleClickOutside(e: Event) {
+      const target = e.target as Node;
+      // Se o clique foi em um elemento que já saiu do DOM (ex: ícones trocados) ou não existe, ignora
+      if (!target || !document.body.contains(target)) return;
+      
+      if (panelRef.current && !panelRef.current.contains(target)) {
         setIsOpen(false);
       }
     }
-    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
   }, [isOpen]);
 
   // ─── Inscrição em tempo real no Firebase ───────────────────────────────────
