@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { FixedBill, IncomeSource, CardInvoice, PlannedInstallment, MesCalculadoSalvo, AppStorageSchema } from "./types";
 import { formatMonth, addMonths } from "./utils";
 import {
@@ -246,12 +246,19 @@ export default function App() {
     };
   }, []);
 
+  // Flag para rastrear se a mudança de estado atual veio do servidor (evita loops de sincronização)
+  const isIncomingRemoteUpdate = useRef(false);
+
   // --- Sincronização automática com LocalStorage ---
   useEffect(() => {
     try {
       fixedBillsStorage.saveAll(fixedBills);
     } catch (e: any) {
       if (e.message === "STORAGE_FULL") setStorageError(true);
+    }
+    if (isIncomingRemoteUpdate.current) {
+      // Se veio do servidor, não incrementa a versão (evita reenviar o que acabou de baixar)
+      return;
     }
     setDataVersion((v) => v + 1);
   }, [fixedBills]);
@@ -262,6 +269,9 @@ export default function App() {
     } catch (e: any) {
       if (e.message === "STORAGE_FULL") setStorageError(true);
     }
+    if (isIncomingRemoteUpdate.current) {
+      return;
+    }
     setDataVersion((v) => v + 1);
   }, [incomes]);
 
@@ -271,6 +281,9 @@ export default function App() {
     } catch (e: any) {
       if (e.message === "STORAGE_FULL") setStorageError(true);
     }
+    if (isIncomingRemoteUpdate.current) {
+      return;
+    }
     setDataVersion((v) => v + 1);
   }, [invoices]);
 
@@ -279,6 +292,11 @@ export default function App() {
       plannedInstallmentsStorage.saveAll(plannedInstallments);
     } catch (e: any) {
       if (e.message === "STORAGE_FULL") setStorageError(true);
+    }
+    if (isIncomingRemoteUpdate.current) {
+      // Último useEffect reseta a flag para as próximas interações do usuário
+      isIncomingRemoteUpdate.current = false;
+      return;
     }
     setDataVersion((v) => v + 1);
   }, [plannedInstallments]);
@@ -298,10 +316,49 @@ export default function App() {
 
   // ─── Callback: ao receber dados do servidor, aplica no estado do app ─────────
   const handleRemoteData = useCallback((data: any) => {
-    if (data.fixedBills) setFixedBills(data.fixedBills);
-    if (data.incomes) setIncomes(data.incomes);
-    if (data.invoices) setInvoices(data.invoices);
-    if (data.plannedInstallments) setPlannedInstallments(data.plannedInstallments);
+    // Só atualiza os estados se os dados forem realmente diferentes
+    let changed = false;
+
+    setFixedBills((prev) => {
+      const isDiff = JSON.stringify(prev) !== JSON.stringify(data.fixedBills);
+      if (isDiff && data.fixedBills) {
+        changed = true;
+        return data.fixedBills;
+      }
+      return prev;
+    });
+
+    setIncomes((prev) => {
+      const isDiff = JSON.stringify(prev) !== JSON.stringify(data.incomes);
+      if (isDiff && data.incomes) {
+        changed = true;
+        return data.incomes;
+      }
+      return prev;
+    });
+
+    setInvoices((prev) => {
+      const isDiff = JSON.stringify(prev) !== JSON.stringify(data.invoices);
+      if (isDiff && data.invoices) {
+        changed = true;
+        return data.invoices;
+      }
+      return prev;
+    });
+
+    setPlannedInstallments((prev) => {
+      const isDiff = JSON.stringify(prev) !== JSON.stringify(data.plannedInstallments);
+      if (isDiff && data.plannedInstallments) {
+        changed = true;
+        return data.plannedInstallments;
+      }
+      return prev;
+    });
+
+    if (changed) {
+      // Sinaliza para os useEffects locais que essa mudança veio de fora e não deve gerar push
+      isIncomingRemoteUpdate.current = true;
+    }
   }, []);
 
   // Navegação rápida de meses
