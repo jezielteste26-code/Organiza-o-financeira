@@ -277,7 +277,7 @@ export default function FixedBills({
           </div>
 
           {/* Form de Contas Fixas */}
-          <form onSubmit={handleSaveBill} className="space-y-4 mb-6 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl">
+          <form id="add-bill-form" onSubmit={handleSaveBill} className="space-y-4 mb-6 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl">
             <h4 className="text-xs font-black text-zinc-500 uppercase tracking-widest">
               {editingBillId ? "Editar Despesa Recorrente" : "Adicionar Nova Conta Fixa"}
             </h4>

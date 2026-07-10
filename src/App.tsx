@@ -6,12 +6,18 @@
 import React, { useState, useEffect } from "react";
 import { FixedBill, IncomeSource, CardInvoice, PlannedInstallment } from "./types";
 import { formatMonth, addMonths } from "./utils";
+import {
+  fixedBillsStorage,
+  incomesStorage,
+  invoicesStorage,
+  plannedInstallmentsStorage
+} from "./services/storageService";
 import Dashboard from "./components/Dashboard";
 import FixedBills from "./components/FixedBills";
 import CardInvoices from "./components/CardInvoices";
 import PlannedInstallments from "./components/PlannedInstallments";
 import Reports from "./components/Reports";
-import { Landmark, LayoutDashboard, Wallet, CreditCard, ArrowUpRight, BarChart3, ChevronLeft, ChevronRight, Menu, X, Coins } from "lucide-react";
+import { Landmark, LayoutDashboard, Wallet, CreditCard, ArrowUpRight, BarChart3, ChevronLeft, ChevronRight, Menu, X, Coins, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 // --- Dados Iniciais de Demonstração (Caso o localStorage esteja vazio) ---
@@ -117,43 +123,65 @@ export default function App() {
   const [selectedMonth, setSelectedMonth] = useState<string>("2026-07");
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [fabOpen, setFabOpen] = useState<boolean>(false);
+  const [storageError, setStorageError] = useState<boolean>(false);
 
   // --- Inicialização dos Estados com LocalStorage ---
   const [fixedBills, setFixedBills] = useState<FixedBill[]>(() => {
-    const saved = localStorage.getItem("fin_fixed_bills");
-    return saved ? JSON.parse(saved) : INITIAL_BILLS;
+    return fixedBillsStorage.getAll(INITIAL_BILLS);
   });
 
   const [incomes, setIncomes] = useState<IncomeSource[]>(() => {
-    const saved = localStorage.getItem("fin_incomes");
-    return saved ? JSON.parse(saved) : INITIAL_INCOMES;
+    return incomesStorage.getAll(INITIAL_INCOMES);
   });
 
   const [invoices, setInvoices] = useState<CardInvoice[]>(() => {
-    const saved = localStorage.getItem("fin_invoices");
-    return saved ? JSON.parse(saved) : INITIAL_INVOICES;
+    return invoicesStorage.getAll(INITIAL_INVOICES);
   });
 
   const [plannedInstallments, setPlannedInstallments] = useState<PlannedInstallment[]>(() => {
-    const saved = localStorage.getItem("fin_planned");
-    return saved ? JSON.parse(saved) : INITIAL_PLANNED;
+    return plannedInstallmentsStorage.getAll(INITIAL_PLANNED);
   });
 
   // --- Sincronização automática com LocalStorage ---
   useEffect(() => {
-    localStorage.setItem("fin_fixed_bills", JSON.stringify(fixedBills));
+    try {
+      fixedBillsStorage.saveAll(fixedBills);
+    } catch (e: any) {
+      if (e.message === "STORAGE_FULL") {
+        setStorageError(true);
+      }
+    }
   }, [fixedBills]);
 
   useEffect(() => {
-    localStorage.setItem("fin_incomes", JSON.stringify(incomes));
+    try {
+      incomesStorage.saveAll(incomes);
+    } catch (e: any) {
+      if (e.message === "STORAGE_FULL") {
+        setStorageError(true);
+      }
+    }
   }, [incomes]);
 
   useEffect(() => {
-    localStorage.setItem("fin_invoices", JSON.stringify(invoices));
+    try {
+      invoicesStorage.saveAll(invoices);
+    } catch (e: any) {
+      if (e.message === "STORAGE_FULL") {
+        setStorageError(true);
+      }
+    }
   }, [invoices]);
 
   useEffect(() => {
-    localStorage.setItem("fin_planned", JSON.stringify(plannedInstallments));
+    try {
+      plannedInstallmentsStorage.saveAll(plannedInstallments);
+    } catch (e: any) {
+      if (e.message === "STORAGE_FULL") {
+        setStorageError(true);
+      }
+    }
   }, [plannedInstallments]);
 
   // Navegação rápida de meses
@@ -212,10 +240,10 @@ export default function App() {
         <div className="flex items-center gap-1.5 bg-zinc-100 border border-zinc-200/60 rounded-2xl p-1 shadow-2xs">
           <button
             onClick={handlePrevMonth}
-            className="p-1.5 text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-xl transition-all"
+            className="w-11 h-11 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-xl transition-all"
             title="Mês Anterior"
           >
-            <ChevronLeft className="w-4 h-4 shrink-0" />
+            <ChevronLeft className="w-5 h-5 shrink-0" />
           </button>
           
           <span className="text-xs sm:text-sm font-bold text-zinc-800 px-3 min-w-[130px] text-center select-none">
@@ -224,21 +252,36 @@ export default function App() {
 
           <button
             onClick={handleNextMonth}
-            className="p-1.5 text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-xl transition-all"
+            className="w-11 h-11 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-xl transition-all"
             title="Próximo Mês"
           >
-            <ChevronRight className="w-4 h-4 shrink-0" />
+            <ChevronRight className="w-5 h-5 shrink-0" />
           </button>
         </div>
-
-        {/* Botão Hambúrguer Mobile */}
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2 text-zinc-500 hover:text-zinc-950 md:hidden hover:bg-zinc-100 rounded-xl transition-all"
-        >
-          {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
       </header>
+
+      {/* BANNER DE ERRO DE ARMAZENAMENTO */}
+      <AnimatePresence>
+        {storageError && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="bg-rose-50 border-b border-rose-200 text-rose-800 px-6 py-3 flex items-center justify-between text-xs font-semibold z-30"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-base">⚠️</span>
+              <span>O armazenamento local está cheio! Remova arquivos ou faturas antigas para continuar salvando suas finanças.</span>
+            </div>
+            <button
+              onClick={() => setStorageError(false)}
+              className="px-2.5 py-1 bg-rose-150 hover:bg-rose-200 text-rose-900 rounded-md transition-all font-bold"
+            >
+              Fechar
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* CORE FRAME LAYOUT */}
       <div className="flex-1 flex flex-col md:flex-row">
@@ -304,7 +347,7 @@ export default function App() {
         </AnimatePresence>
 
         {/* CONTAINER DO CONTEÚDO PRINCIPAL */}
-        <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
+        <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full pb-24 md:pb-8">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab + selectedMonth}
@@ -367,8 +410,102 @@ export default function App() {
         </main>
       </div>
 
+      {/* BOTÃO FLUTUANTE (FAB) PARA AÇÕES RÁPIDAS NO MOBILE */}
+      <div className="fixed bottom-20 right-4 z-40 md:hidden">
+        <div className="relative">
+          <AnimatePresence>
+            {fabOpen && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                className="absolute bottom-16 right-0 bg-white border border-zinc-200 rounded-2xl p-2 shadow-xl flex flex-col gap-2 min-w-[200px]"
+              >
+                <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest px-2.5 py-1">
+                  Ações Rápidas
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveTab("cartao");
+                    setFabOpen(false);
+                    setTimeout(() => {
+                      document.getElementById("invoice-upload-dropzone")?.scrollIntoView({ behavior: "smooth" });
+                    }, 150);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-zinc-50 rounded-xl text-left text-xs font-bold text-zinc-700 transition-all"
+                >
+                  <CreditCard className="w-4 h-4 text-emerald-500 shrink-0" />
+                  Enviar Fatura PDF/Imagem
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab("fixas");
+                    setFabOpen(false);
+                    setTimeout(() => {
+                      document.getElementById("add-bill-form")?.scrollIntoView({ behavior: "smooth" });
+                    }, 150);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-zinc-50 rounded-xl text-left text-xs font-bold text-zinc-700 transition-all"
+                >
+                  <Wallet className="w-4 h-4 text-emerald-500 shrink-0" />
+                  Adicionar Conta Fixa
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab("planejadas");
+                    setFabOpen(false);
+                    setTimeout(() => {
+                      document.getElementById("planned-installments-container")?.scrollIntoView({ behavior: "smooth" });
+                    }, 150);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-zinc-50 rounded-xl text-left text-xs font-bold text-zinc-700 transition-all"
+                >
+                  <ArrowUpRight className="w-4 h-4 text-emerald-500 shrink-0" />
+                  Simular Nova Parcela
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <button
+            onClick={() => setFabOpen(!fabOpen)}
+            className="w-12 h-12 bg-zinc-900 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-zinc-800 transition-all focus:outline-hidden"
+            aria-label="Ações rápidas"
+          >
+            <motion.div
+              animate={{ rotate: fabOpen ? 45 : 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <Plus className="w-6 h-6 text-emerald-400" />
+            </motion.div>
+          </button>
+        </div>
+      </div>
+
+      {/* BARRA DE NAVEGAÇÃO INFERIOR MOBILE */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-zinc-200 md:hidden flex items-center justify-around py-1.5 shadow-lg pb-safe-bottom">
+        {navigationItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`flex flex-col items-center justify-center flex-1 py-1 min-h-[48px] transition-all ${
+                isActive ? "text-zinc-950" : "text-zinc-400 hover:text-zinc-600"
+              }`}
+            >
+              <Icon className={`w-5 h-5 ${isActive ? "text-emerald-500" : ""}`} />
+              <span className={`text-[9px] mt-1 font-bold ${isActive ? "text-zinc-950" : "text-zinc-400"}`}>
+                {item.label.split(" ")[0]}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
       {/* FOOTER */}
-      <footer className="bg-white border-t border-gray-100 py-4 text-center text-xs text-gray-400 select-none">
+      <footer className="bg-white border-t border-gray-100 py-4 text-center text-xs text-gray-400 select-none pb-20 md:pb-4">
         <p>© 2026 Controle Financeiro Pessoal • Processamento Inteligente de Faturas por IA</p>
       </footer>
     </div>
