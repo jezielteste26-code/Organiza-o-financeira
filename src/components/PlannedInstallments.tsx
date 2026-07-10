@@ -224,65 +224,73 @@ export default function PlannedInstallments({
                     return (
                       <div
                         key={sim.id}
-                        className={`p-4 rounded-2xl border transition-all duration-200 ${
+                        className={`p-4 sm:p-5 rounded-2xl border transition-all duration-200 bg-white ${
                           isChargingInSelectedMonth
-                            ? "bg-indigo-50/25 border-indigo-150"
-                            : "bg-white border-zinc-200 hover:shadow-xs"
+                            ? "border-indigo-150 shadow-2xs shadow-indigo-100/50"
+                            : "border-zinc-200 hover:shadow-2xs"
                         }`}
                       >
-                        <div className="flex justify-between items-start gap-4">
+                        {/* Linha 1: Descrição e valor da parcela */}
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 border-b border-zinc-100 pb-3">
                           <div>
-                            <h4 className="font-bold text-zinc-900 text-sm">{sim.description}</h4>
-                            <div className="flex items-center gap-2 mt-1.5 flex-wrap text-xs text-zinc-400">
-                              <span className="flex items-center gap-1 font-medium">
+                            <h4 className="font-bold text-zinc-950 text-sm leading-tight">{sim.description}</h4>
+                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap text-[11px] text-zinc-500 font-medium">
+                              <span className="flex items-center gap-1 font-semibold text-zinc-600">
                                 <Calendar className="w-3.5 h-3.5 text-zinc-400" />
                                 Estreia: {formatMonth(sim.firstChargeMonth)}
                               </span>
                               <span className="text-zinc-300">•</span>
-                              <span className="font-bold text-indigo-600">{parcelLabel}</span>
+                              <span className={`px-2 py-0.5 rounded-md font-bold uppercase text-[9px] ${
+                                isChargingInSelectedMonth 
+                                  ? "bg-indigo-50 text-indigo-700 border border-indigo-100" 
+                                  : "bg-zinc-100 text-zinc-600"
+                              }`}>
+                                {parcelLabel}
+                              </span>
                             </div>
                           </div>
 
-                          <div className="text-right">
-                            <span className="font-black text-zinc-950 block text-sm">
+                          <div className="flex sm:flex-col items-baseline sm:items-end justify-between sm:justify-start gap-1 mt-1 sm:mt-0 shrink-0">
+                            <span className="font-black text-zinc-950 text-base font-mono">
                               {formatCurrency(sim.installmentValue)}
-                              <span className="text-[10px] text-zinc-500 font-normal"> /mês</span>
+                              <span className="text-[10px] text-zinc-400 font-normal"> /mês</span>
                             </span>
-                            <span className="text-[10px] text-zinc-400 block mt-0.5 font-bold">
-                              Total: {formatCurrency(sim.totalValue)}
+                            <span className="text-[10px] text-zinc-500 font-medium sm:text-right">
+                              Total: <span className="font-semibold text-zinc-700">{formatCurrency(sim.totalValue)}</span>
                             </span>
                           </div>
                         </div>
 
-                        {/* Ações Rápidas */}
-                        <div className="mt-4 pt-3 border-t border-zinc-100 flex justify-between items-center text-xs">
-                          <span className="text-zinc-400 font-semibold text-[10px] uppercase">
+                        {/* Linha 2: Status do Orçamento e Botões de Ação */}
+                        <div className="mt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-1.5 text-zinc-500 font-semibold text-[10px] uppercase tracking-wider">
+                            <span className={`w-2 h-2 rounded-full ${isChargingInSelectedMonth ? "bg-indigo-500 animate-pulse" : "bg-zinc-300"}`} />
                             {isChargingInSelectedMonth 
-                              ? "Compromete o orçamento" 
+                              ? "Impacta orçamento deste mês" 
                               : "Sem cobrança este mês"}
-                          </span>
+                          </div>
                           
-                          <div className="flex gap-2">
+                          <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
                             <button
                               onClick={() => handleUpdateStatus(sim.id, "confirmed_in_invoice")}
-                              className="px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-[9px] uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all shadow-2xs"
+                              className="flex-1 sm:flex-none px-3 py-1.5 bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-[9px] uppercase tracking-wider rounded-lg flex items-center justify-center gap-1 transition-all shadow-sm"
                               title="Marcar como já inclusa na fatura real para parar de duplicar despesa"
                             >
-                              <Check className="w-3.5 h-3.5 text-emerald-400" /> Confirmar
+                              <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> Confirmar
                             </button>
                             <button
                               onClick={() => handleUpdateStatus(sim.id, "archived")}
-                              className="px-2.5 py-1.5 bg-zinc-150 hover:bg-zinc-200 text-zinc-700 font-bold text-[9px] uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all"
+                              className="flex-1 sm:flex-none px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-[9px] uppercase tracking-wider rounded-lg flex items-center justify-center gap-1 transition-all"
                               title="Arquivar simulação"
                             >
-                              <Archive className="w-3.5 h-3.5" /> Arquivar
+                              <Archive className="w-3.5 h-3.5 shrink-0" /> Arquivar
                             </button>
                             <button
                               onClick={() => handleDeleteSimulation(sim.id)}
-                              className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100 rounded-lg transition-all"
+                              className="p-2 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all shrink-0 border border-zinc-200 hover:border-rose-100"
                               title="Excluir"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3.5 h-3.5 shrink-0" />
                             </button>
                           </div>
                         </div>

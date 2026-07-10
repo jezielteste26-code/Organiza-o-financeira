@@ -67,3 +67,51 @@ export interface MonthlyReportSummary {
   simulatedInstallments: number;
   balance: number;
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Schema de Persistência — Armazenamento Local Definitivo
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * configuracoes_usuario
+ * Metadados do perfil financeiro cadastrado no Onboarding.
+ * Serve como ponto de verdade para recriar a projeção a qualquer momento.
+ */
+export interface ConfiguracoesUsuario {
+  /** Versão do schema (permite migrações futuras) */
+  schemaVersion: number;
+  /** Mês em que o onboarding foi concluído ("AAAA-MM") */
+  mesOnboarding: string;
+  /** Data/hora em que o usuário completou o onboarding */
+  concluidoEm: string; // ISO 8601
+  /** Flag de onboarding concluído */
+  onboardingCompleto: boolean;
+}
+
+/**
+ * meses_calculados
+ * Um mês da projeção de 12 meses gerado pelo Motor de Cálculo.
+ * O campo `faturaCartao` começa em 0 e pode ser atualizado manualmente.
+ */
+export interface MesCalculadoSalvo {
+  mes: string;              // "AAAA-MM"
+  totalRendas: number;      // Number tipado — nunca string
+  totalContasFixas: number; // Number tipado
+  faturaCartao: number;     // Placeholder inicial = 0
+  saldoMensal: number;      // totalRendas - totalContasFixas - faturaCartao
+  saldoAcumulado: number;   // Saldo acumulado desde o mês inicial
+}
+
+/**
+ * AppStorageSchema
+ * Envelope raiz que une os 3 domínios de armazenamento.
+ * Salvo como um único documento JSON no localStorage.
+ */
+export interface AppStorageSchema {
+  configuracoes_usuario: ConfiguracoesUsuario;
+  transacoes_fixas: {
+    rendas: IncomeSource[];
+    contasFixas: FixedBill[];
+  };
+  meses_calculados: MesCalculadoSalvo[];
+}

@@ -9,6 +9,7 @@ import { formatCurrency, formatMonth, calculateReport, addMonths, getMonthsRange
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Line, ComposedChart } from "recharts";
 import { Calendar, Download, Upload, AlertTriangle, TrendingUp, Sparkles, Check, FileCode, Landmark, ChevronDown, ChevronUp, CreditCard, Layers, Clock, ArrowUpRight } from "lucide-react";
 import { motion } from "motion/react";
+import { importarBackupDoApp } from "../services/backupService";
 
 interface ReportsProps {
   selectedMonth: string;
@@ -18,6 +19,7 @@ interface ReportsProps {
   invoices: CardInvoice[];
   plannedInstallments: PlannedInstallment[];
   onImportBackup: (importedData: any) => void;
+  onExportBackup: () => void;
 }
 
 export default function Reports({
@@ -28,6 +30,7 @@ export default function Reports({
   invoices,
   plannedInstallments,
   onImportBackup,
+  onExportBackup,
 }: ReportsProps) {
   // Gera uma faixa de 6 meses consecutivos (1 mês atrás, mês atual, e 4 meses à frente)
   const monthsRange = useMemo(() => {
@@ -187,44 +190,28 @@ export default function Reports({
     return [...invoiceItems, ...simulatedItems];
   }, [selectedMonth, invoices, plannedInstallments]);
 
-  // Exportar Backup de dados para JSON
+  // Exportar Backup de dados para JSON estruturado v2
   const handleExportBackup = () => {
-    const dataToExport = {
-      version: 1,
-      incomes,
-      fixedBills,
-      invoices,
-      plannedInstallments,
-      exportedAt: new Date().toISOString(),
-    };
-
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToExport, null, 2));
-    const downloadAnchor = document.createElement("a");
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `controle_financeiro_backup_${new Date().toISOString().substring(0, 10)}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+    onExportBackup();
   };
 
-  // Importar Backup JSON
+  // Importar Backup JSON com validação de schema rígida
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileReader = new FileReader();
     if (e.target.files && e.target.files[0]) {
-      fileReader.readAsText(e.target.files[0], "UTF-8");
-      fileReader.onload = (event) => {
-        try {
-          const parsed = JSON.parse(event.target?.result as string);
-          if (parsed.fixedBills && parsed.incomes && parsed.invoices && parsed.plannedInstallments) {
-            onImportBackup(parsed);
-            alert("Backup importado com sucesso!");
+      importarBackupDoApp(e.target.files[0])
+        .then((importedSchema) => {
+          onImportBackup(importedSchema);
+          alert("Backup importado e validado com sucesso! O app foi atualizado.");
+        })
+        .catch((err) => {
+          if (err.message === "SCHEMA_INVALIDO") {
+            alert("Erro: O arquivo de backup não corresponde ao formato esperado (schema v2 inválido).");
+          } else if (err.message === "JSON_CORROMPIDO") {
+            alert("Erro: O arquivo está corrompido ou não é um JSON válido.");
           } else {
-            alert("Arquivo de backup inválido. Certifique-se de que é o arquivo correto.");
+            alert("Erro ao ler o arquivo de backup.");
           }
-        } catch (err) {
-          alert("Erro ao ler o arquivo de backup. Verifique se o JSON é válido.");
-        }
-      };
+        });
     }
   };
 

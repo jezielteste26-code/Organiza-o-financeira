@@ -4,19 +4,27 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { FixedBill, IncomeSource, CardInvoice, PlannedInstallment } from "./types";
+import { FixedBill, IncomeSource, CardInvoice, PlannedInstallment, MesCalculadoSalvo, AppStorageSchema } from "./types";
 import { formatMonth, addMonths } from "./utils";
 import {
   fixedBillsStorage,
   incomesStorage,
   invoicesStorage,
-  plannedInstallmentsStorage
+  plannedInstallmentsStorage,
+  configuracoesStorage,
+  transacoesFixasStorage,
+  mesesCalculadosStorage,
+  saveAppState,
+  loadAppState,
 } from "./services/storageService";
+import { calcularProjecao, rotacionarJanelaTemporal } from "./services/calculationEngine";
+import { exportarBackupDoApp } from "./services/backupService";
 import Dashboard from "./components/Dashboard";
 import FixedBills from "./components/FixedBills";
 import CardInvoices from "./components/CardInvoices";
 import PlannedInstallments from "./components/PlannedInstallments";
 import Reports from "./components/Reports";
+import Onboarding from "./components/Onboarding";
 import { Landmark, LayoutDashboard, Wallet, CreditCard, ArrowUpRight, BarChart3, ChevronLeft, ChevronRight, Menu, X, Coins, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -126,13 +134,57 @@ export default function App() {
   const [fabOpen, setFabOpen] = useState<boolean>(false);
   const [storageError, setStorageError] = useState<boolean>(false);
 
-  // --- Inicialização dos Estados com LocalStorage ---
+  // ─── Verificação de Primeiro Acesso (schema v2) ────────────────────────────
+  // Usa configuracoesStorage.isOnboardingCompleto() como fonte de verdade.
+  // Fallback: checa também as chaves legadas (fin_*) para usuários antigos.
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    const completoV2 = configuracoesStorage.isOnboardingCompleto();
+    if (completoV2) return false;
+    // Fallback para dados legados (usuários que tinham dados antes desta versão)
+    const legacyBills = localStorage.getItem("fin_fixed_bills");
+    const legacyIncomes = localStorage.getItem("fin_incomes");
+    return !legacyBills && !legacyIncomes;
+  });
+
+  // ─── Projeção de 12 Meses com Rotação Temporal (Rolling Window) ────────────
+  const [mesesCalculados, setMesesCalculados] = useState<MesCalculadoSalvo[]>(() => {
+    const meses = mesesCalculadosStorage.load();
+    if (meses.length === 0) return [];
+    
+    // Obtém o mês atual
+    const mesAtual = new Date().toISOString().substring(0, 7);
+    
+    // Carrega dados base de receitas e despesas
+    const v2 = transacoesFixasStorage.load();
+    const rendaMensal = v2.rendas.reduce((acc, r) => acc + r.value, 0);
+    const custoFixo = v2.contasFixas.filter(c => c.active).reduce((acc, c) => acc + c.value, 0);
+    
+    // Rotaciona a projeção caso tenhamos mudado de mês/ano
+    const rotacionados = rotacionarJanelaTemporal(meses, mesAtual, rendaMensal, custoFixo);
+    
+    // Se houve rotação (elementos mudaram), atualiza o localStorage de forma atômica
+    if (JSON.stringify(meses) !== JSON.stringify(rotacionados)) {
+      try {
+        mesesCalculadosStorage.save(rotacionados);
+      } catch (e) {
+        console.error("Erro ao salvar rotação temporal:", e);
+      }
+    }
+    
+    return rotacionados;
+  });
+
+  // ─── Inicialização dos Estados — schema v2 tem prioridade sobre dados legados ─
   const [fixedBills, setFixedBills] = useState<FixedBill[]>(() => {
-    return fixedBillsStorage.getAll(INITIAL_BILLS);
+    const v2 = transacoesFixasStorage.load();
+    if (v2.contasFixas.length > 0) return v2.contasFixas;
+    return fixedBillsStorage.getAll([]); // fallback legado
   });
 
   const [incomes, setIncomes] = useState<IncomeSource[]>(() => {
-    return incomesStorage.getAll(INITIAL_INCOMES);
+    const v2 = transacoesFixasStorage.load();
+    if (v2.rendas.length > 0) return v2.rendas;
+    return incomesStorage.getAll([]); // fallback legado
   });
 
   const [invoices, setInvoices] = useState<CardInvoice[]>(() => {
@@ -142,6 +194,72 @@ export default function App() {
   const [plannedInstallments, setPlannedInstallments] = useState<PlannedInstallment[]>(() => {
     return plannedInstallmentsStorage.getAll(INITIAL_PLANNED);
   });
+
+  // ─── Conclusão do Onboarding ────────────────────────────────────────────────
+  // 1. Chama o Motor de Cálculo para gerar a projeção de 12 meses.
+  // 2. Persiste os 3 domínios do schema definitivo atomicamente.
+  // 3. Atualiza o estado global e fecha a tela de onboarding.
+  const handleOnboardingComplete = (newIncomes: IncomeSource[], newBills: FixedBill[]) => {
+    const mesAtual = new Date().toISOString().substring(0, 7);
+
+    // Motor de Cálculo — função pura, sem valores fictícios
+    const projecao = calcularProjecao({
+      mesInicial: mesAtual,
+      rendas: newIncomes,
+      contasFixas: newBills,
+    });
+
+    // Persiste os 3 domínios no localStorage
+    saveAppState(mesAtual, newIncomes, newBills, projecao.meses);
+
+    // Atualiza o estado global do app
+    setIncomes(newIncomes);
+    setFixedBills(newBills);
+    setMesesCalculados(projecao.meses);
+    setShowOnboarding(false);
+  };
+
+  // ─── Sync Check (Resiliência contra limpeza do cache do SO) ──────────────────
+  // Toda vez que a janela ganha foco (ex: usuário minimizou e voltou),
+  // valida e recarrega os dados do storage para garantir que não sumiram.
+  useEffect(() => {
+    const checkSyncIntegrity = () => {
+      const state = loadAppState();
+      if (state) {
+        // Se a config do storage existe e onboarding está completo, garante sincronia
+        setIncomes((prev) => 
+          JSON.stringify(prev) !== JSON.stringify(state.transacoes_fixas.rendas)
+            ? state.transacoes_fixas.rendas 
+            : prev
+        );
+        setFixedBills((prev) => 
+          JSON.stringify(prev) !== JSON.stringify(state.transacoes_fixas.contasFixas)
+            ? state.transacoes_fixas.contasFixas 
+            : prev
+        );
+        setMesesCalculados((prev) => 
+          JSON.stringify(prev) !== JSON.stringify(state.meses_calculados)
+            ? state.meses_calculados 
+            : prev
+        );
+        setShowOnboarding(false);
+      } else {
+        // Se o storage foi limpo de forma agressiva pelo SO, restabelece o onboarding
+        const completoV2 = configuracoesStorage.isOnboardingCompleto();
+        if (!completoV2) {
+          setShowOnboarding(true);
+        }
+      }
+    };
+
+    window.addEventListener("focus", checkSyncIntegrity);
+    // Executa uma verificação ativa na montagem
+    checkSyncIntegrity();
+
+    return () => {
+      window.removeEventListener("focus", checkSyncIntegrity);
+    };
+  }, []);
 
   // --- Sincronização automática com LocalStorage ---
   useEffect(() => {
@@ -200,12 +318,40 @@ export default function App() {
     );
   };
 
-  // Carregar Backup Completo
+  // Carregar Backup Completo (Schema v2 com validação)
   const handleImportBackup = (backup: any) => {
+    if (backup.transacoes_fixas) {
+      if (backup.transacoes_fixas.rendas) setIncomes(backup.transacoes_fixas.rendas);
+      if (backup.transacoes_fixas.contasFixas) setFixedBills(backup.transacoes_fixas.contasFixas);
+    }
+    if (backup.meses_calculados) setMesesCalculados(backup.meses_calculados);
+    
+    // Suporte legado se o usuário importar um backup antigo
     if (backup.fixedBills) setFixedBills(backup.fixedBills);
     if (backup.incomes) setIncomes(backup.incomes);
     if (backup.invoices) setInvoices(backup.invoices);
     if (backup.plannedInstallments) setPlannedInstallments(backup.plannedInstallments);
+  };
+
+  // Exportar Backup Completo (Schema v2)
+  const handleExportBackup = () => {
+    const activeConfig = configuracoesStorage.load() || {
+      schemaVersion: 1,
+      mesOnboarding: new Date().toISOString().substring(0, 7),
+      concluidoEm: new Date().toISOString(),
+      onboardingCompleto: true
+    };
+
+    const schema: AppStorageSchema = {
+      configuracoes_usuario: activeConfig,
+      transacoes_fixas: {
+        rendas: incomes,
+        contasFixas: fixedBills
+      },
+      meses_calculados: mesesCalculados
+    };
+
+    exportarBackupDoApp(schema);
   };
 
   // Itens do Menu de Navegação
@@ -218,44 +364,49 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col font-sans antialiased" id="main-app-shell">
+    <div className="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col font-sans antialiased w-full max-w-full overflow-x-hidden" id="main-app-shell">
+
+      {/* ONBOARDING - Exibido apenas no primeiro acesso */}
+      {showOnboarding && (
+        <Onboarding onComplete={handleOnboardingComplete} />
+      )}
       
       {/* HEADER DE NAVEGAÇÃO DE MESES */}
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-zinc-200/60 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-zinc-900 text-white rounded-xl shadow-xs">
-            <Coins className="w-5 h-5 shrink-0 text-emerald-400" />
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-zinc-200/60 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 w-full max-w-full overflow-hidden">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="p-2 bg-zinc-900 text-white rounded-lg shadow-xs shrink-0">
+            <Coins className="w-4.5 h-4.5 shrink-0 text-emerald-400" />
           </div>
-          <div>
-            <h1 className="font-bold text-zinc-800 leading-tight tracking-tight text-sm sm:text-base">
+          <div className="min-w-0 truncate">
+            <h1 className="font-bold text-zinc-800 leading-tight tracking-tight text-xs sm:text-sm truncate">
               Controle Financeiro
             </h1>
-            <span className="text-[10px] text-zinc-400 font-extrabold uppercase tracking-wider block">
+            <span className="text-[9px] text-zinc-400 font-extrabold uppercase tracking-wider block truncate">
               Pessoal & IA
             </span>
           </div>
         </div>
 
         {/* Month Selector Widget */}
-        <div className="flex items-center gap-1.5 bg-zinc-100 border border-zinc-200/60 rounded-2xl p-1 shadow-2xs">
+        <div className="flex items-center gap-1 bg-zinc-50 border border-zinc-200/50 rounded-xl p-0.5 shrink-0">
           <button
             onClick={handlePrevMonth}
-            className="w-11 h-11 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-xl transition-all"
+            className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-lg transition-all"
             title="Mês Anterior"
           >
-            <ChevronLeft className="w-5 h-5 shrink-0" />
+            <ChevronLeft className="w-4.5 h-4.5 shrink-0" />
           </button>
           
-          <span className="text-xs sm:text-sm font-bold text-zinc-800 px-3 min-w-[130px] text-center select-none">
+          <span className="text-[11px] sm:text-xs font-bold text-zinc-700 px-2 min-w-[95px] sm:min-w-[110px] text-center select-none truncate">
             {formatMonth(selectedMonth)}
           </span>
 
           <button
             onClick={handleNextMonth}
-            className="w-11 h-11 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-xl transition-all"
+            className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded-lg transition-all"
             title="Próximo Mês"
           >
-            <ChevronRight className="w-5 h-5 shrink-0" />
+            <ChevronRight className="w-4.5 h-4.5 shrink-0" />
           </button>
         </div>
       </header>
@@ -403,6 +554,7 @@ export default function App() {
                   invoices={invoices}
                   plannedInstallments={plannedInstallments}
                   onImportBackup={handleImportBackup}
+                  onExportBackup={handleExportBackup}
                 />
               )}
             </motion.div>

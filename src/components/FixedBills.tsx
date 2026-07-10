@@ -236,19 +236,19 @@ export default function FixedBills({
                       <h5 className="text-xs font-bold text-zinc-800">{inc.label}</h5>
                       <span className="text-[9px] text-zinc-400 uppercase tracking-wider font-semibold">Receita Mensal</span>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 shrink-0">
                       <span className="text-xs font-black text-emerald-600 font-mono">{formatCurrency(inc.value)}</span>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex gap-0.5">
                         <button
                           onClick={() => handleEditIncome(inc)}
-                          className="p-1 text-zinc-400 hover:text-zinc-950 hover:bg-zinc-50 border border-transparent hover:border-zinc-200 rounded-lg transition-all"
+                          className="p-1.5 text-zinc-400 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-all"
                           title="Editar"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleDeleteIncome(inc.id)}
-                          className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-zinc-200 rounded-lg transition-all"
+                          className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
                           title="Excluir"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -436,21 +436,21 @@ export default function FixedBills({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 shrink-0">
                       <span className={`text-xs font-black font-mono ${bill.active ? "text-zinc-900" : "text-zinc-400 line-through"}`}>
                         {formatCurrency(bill.value)}
                       </span>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex gap-0.5">
                         <button
                           onClick={() => handleEditBill(bill)}
-                          className="p-1.5 text-zinc-400 hover:text-zinc-950 hover:bg-zinc-50 border border-transparent hover:border-zinc-200 rounded-lg transition-all"
+                          className="p-1.5 text-zinc-400 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-all"
                           title="Editar"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleDeleteBill(bill.id)}
-                          className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg transition-all"
+                          className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
                           title="Excluir"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

@@ -639,7 +639,92 @@ export default function CardInvoices({
               )}
             </div>
 
-            <div className="overflow-x-auto">
+            {/* LISTAGEM RESPONSIVA: Oculta a tabela em mobile, exibe cards. Em desktop, exibe a tabela. */}
+            
+            {/* 1. Modo Mobile: Lista de Cards */}
+            <div className="block md:hidden divide-y divide-zinc-150">
+              {activeInvoice.purchases.length === 0 ? (
+                <div className="text-center py-10 text-zinc-400 font-bold text-xs bg-white">
+                  Nenhuma compra lançada na fatura.
+                </div>
+              ) : (
+                activeInvoice.purchases.map((pur) => {
+                  const current = pur.installmentCurrent;
+                  const total = pur.installmentTotal;
+                  const isInstallment = pur.isInstallment;
+                  const remaining = isInstallment && total && current ? total - current : 0;
+                  const progressPct = isInstallment && current && total ? (current / total) * 100 : 100;
+
+                  return (
+                    <div key={pur.id} className="p-4 bg-white space-y-3.5">
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <span className="text-[10px] text-zinc-450 font-bold block mb-1">
+                            {pur.purchaseDate ? new Date(pur.purchaseDate).toLocaleDateString("pt-BR") : "Sem data"}
+                          </span>
+                          <h5 className="text-xs font-bold text-zinc-950 leading-tight">{pur.description}</h5>
+                        </div>
+                        
+                        <div className="text-right shrink-0">
+                          <span className="text-xs font-black text-zinc-950 font-mono block">
+                            {formatCurrency(isInstallment ? pur.installmentValue || 0 : pur.totalValue)}
+                          </span>
+                          {isInstallment && (
+                            <span className="text-[9px] text-zinc-400 font-bold block mt-0.5">
+                              Total: {formatCurrency(pur.totalValue)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Dados de parcelamento e progresso se houver */}
+                      {isInstallment && (
+                        <div className="p-3 bg-indigo-50/20 border border-indigo-100/50 rounded-xl space-y-2">
+                          <div className="flex justify-between items-center text-[10px] font-bold text-indigo-700">
+                            <span>Parcelado ({current}x de {total}x)</span>
+                            {remaining > 0 && <span>Faltam {remaining} meses</span>}
+                          </div>
+                          <div className="w-full bg-zinc-100 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                              style={{ width: `${progressPct}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Tipo à vista e Ações de edição */}
+                      <div className="flex justify-between items-center pt-1">
+                        {!isInstallment && (
+                          <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500 bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded-full">
+                            À Vista
+                          </span>
+                        )}
+                        {isInstallment && <div />}
+                        
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleEditPurchase(pur)}
+                            className="inline-flex items-center justify-center p-2 text-zinc-500 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-all border border-zinc-200 text-[10px] font-bold uppercase tracking-wider gap-1"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" /> Editar
+                          </button>
+                          <button
+                            onClick={() => handleDeletePurchase(pur.id)}
+                            className="inline-flex items-center justify-center p-2 text-zinc-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all border border-zinc-200 text-[10px] font-bold uppercase tracking-wider gap-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Excluir
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* 2. Modo Desktop: Tabela Tradicional */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-zinc-150 text-[10px] font-black text-zinc-400 uppercase tracking-widest bg-zinc-50/20">
@@ -660,12 +745,10 @@ export default function CardInvoices({
                     </tr>
                   ) : (
                     activeInvoice.purchases.map((pur) => {
-                      // Parcela atual / total
                       const current = pur.installmentCurrent;
                       const total = pur.installmentTotal;
                       const isInstallment = pur.isInstallment;
                       
-                      // Progress percentage
                       const progressPct = isInstallment && current && total ? (current / total) * 100 : 100;
                       const remaining = isInstallment && total && current ? total - current : 0;
 
@@ -704,7 +787,7 @@ export default function CardInvoices({
                               </div>
                             ) : (
                               <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500 bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded-full">
-                                À Vista
+                                  À Vista
                               </span>
                             )}
                           </td>
