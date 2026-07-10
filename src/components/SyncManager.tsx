@@ -14,8 +14,8 @@ import {
   Copy,
   Check,
   Loader2,
-  RefreshCw,
   Shuffle,
+  AlertTriangle,
 } from "lucide-react";
 import {
   getSyncCode,
@@ -23,17 +23,15 @@ import {
   clearSyncCode,
   gerarCodigoAleatorio,
   pushToServer,
+  subscribeToRemoteChanges,
+  isFirebaseConfigured,
   SyncStatus,
 } from "../services/syncService";
 
 interface SyncManagerProps {
-  /** Callback chamado quando o usuário ativa um código novo (para fazer push inicial). */
   onSyncActivated: (code: string) => Promise<void>;
-  /** Callback chamado ao detectar novos dados remotos (para atualizar o estado do app). */
   onRemoteDataReceived: (data: object) => void;
-  /** O estado serializado atual do app para ser enviado ao servidor. */
   currentAppData: object;
-  /** Versão/hash dos dados, usada para detectar mudanças e disparar push automático. */
   dataVersion: number;
 }
 
@@ -46,12 +44,17 @@ export default function SyncManager({
   const [isOpen, setIsOpen] = useState(false);
   const [syncCode, setSyncCodeState] = useState<string | null>(getSyncCode);
   const [inputCode, setInputCode] = useState("");
-  const [status, setStatus] = useState<SyncStatus>(getSyncCode() ? "synced" : "no_code");
+  const configured = isFirebaseConfigured();
+  const [status, setStatus] = useState<SyncStatus>(() => {
+    if (!configured) return "not_configured";
+    return getSyncCode() ? "synced" : "no_code";
+  });
   const [copied, setCopied] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  // ─── Fechar painel ao clicar fora ───────────────────────────────────────────
+  // ─── Fechar painel ao clicar fora ──────────────────────────────────────────
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
@@ -62,44 +65,45 @@ export default function SyncManager({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
-  // ─── Auto-push quando os dados do app mudam ─────────────────────────────────
+  // ─── Inscrição em tempo real no Firebase ───────────────────────────────────
+  useEffect(() => {
+    if (!syncCode || !configured) return;
+    unsubscribeRef.current?.();
+    const unsub = subscribeToRemoteChanges(
+      (remoteData) => {
+        onRemoteDataReceived(remoteData);
+        setStatus("synced");
+      },
+      () => setStatus("error")
+    );
+    unsubscribeRef.current = unsub;
+    return () => {
+      unsub();
+      unsubscribeRef.current = null;
+    };
+  }, [syncCode, configured, onRemoteDataReceived]);
+
+  // ─── Auto-push quando os dados do app mudam ────────────────────────────────
   const prevVersionRef = useRef(dataVersion);
   useEffect(() => {
-    if (!syncCode) return;
-    // Evita push na montagem inicial (só quando mudam de fato)
+    if (!syncCode || !configured) return;
     if (prevVersionRef.current === dataVersion) return;
     prevVersionRef.current = dataVersion;
-
     setStatus("syncing");
     pushToServer(currentAppData).then((ok) => {
       setStatus(ok ? "synced" : "error");
     });
-  }, [dataVersion, syncCode, currentAppData]);
-
-  // ─── Polling: busca dados remotos a cada 20 segundos ────────────────────────
-  useEffect(() => {
-    if (!syncCode) return;
-    const interval = setInterval(async () => {
-      if (!getSyncCode()) return;
-      try {
-        const res = await fetch(`/api/sync/${encodeURIComponent(syncCode)}`);
-        if (!res.ok) return;
-        const json = await res.json();
-        if (json.success && json.data) {
-          onRemoteDataReceived(json.data);
-        }
-      } catch {
-        // silently fail
-      }
-    }, 20000);
-    return () => clearInterval(interval);
-  }, [syncCode, onRemoteDataReceived]);
+  }, [dataVersion, syncCode, currentAppData, configured]);
 
   // ─── Ativar código ─────────────────────────────────────────────────────────
   const handleActivate = async (code: string) => {
     const trimmed = code.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
     if (!trimmed) {
       setErrorMsg("Digite um código válido (letras e números).");
+      return;
+    }
+    if (!configured) {
+      setErrorMsg("Firebase não configurado. Veja o README.");
       return;
     }
     setErrorMsg("");
@@ -112,15 +116,17 @@ export default function SyncManager({
       setInputCode("");
     } catch {
       setStatus("error");
-      setErrorMsg("Falha ao enviar dados iniciais. Verifique a conexão.");
+      setErrorMsg("Falha ao enviar dados. Verifique as credenciais do Firebase.");
     }
   };
 
-  // ─── Desativar sincronização ─────────────────────────────────────────────────
+  // ─── Desativar sincronização ────────────────────────────────────────────────
   const handleDeactivate = () => {
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
     clearSyncCode();
     setSyncCodeState(null);
-    setStatus("no_code");
+    setStatus(configured ? "no_code" : "not_configured");
     setInputCode("");
     setErrorMsg("");
   };
@@ -135,12 +141,12 @@ export default function SyncManager({
   };
 
   // ─── Helpers de UI ──────────────────────────────────────────────────────────
-  const statusConfig = {
+  const statusConfig: Record<SyncStatus, { icon: any; color: string; bg: string; label: string; dot: string }> = {
     no_code: {
       icon: CloudOff,
       color: "text-zinc-400",
       bg: "bg-zinc-100",
-      label: "Local",
+      label: "Compartilhar",
       dot: "bg-zinc-300",
     },
     idle: {
@@ -170,6 +176,13 @@ export default function SyncManager({
       bg: "bg-rose-50",
       label: "Erro",
       dot: "bg-rose-400",
+    },
+    not_configured: {
+      icon: AlertTriangle,
+      color: "text-amber-600",
+      bg: "bg-amber-50",
+      label: "Compartilhar",
+      dot: "bg-amber-400",
     },
   };
 
@@ -212,7 +225,22 @@ export default function SyncManager({
             </div>
 
             <div className="p-4 space-y-4">
-              {syncCode ? (
+              {/* Aviso: Firebase não configurado */}
+              {!configured && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-[11px] font-bold text-amber-700">Firebase não configurado</p>
+                    <p className="text-[10px] text-amber-600 mt-0.5">
+                      Adicione as credenciais do Firebase nas variáveis de ambiente{" "}
+                      <code className="font-mono bg-amber-100 px-1 rounded">VITE_FIREBASE_*</code>{" "}
+                      para ativar o compartilhamento em tempo real.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {syncCode && configured ? (
                 /* Estado: Conectado */
                 <>
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
@@ -235,9 +263,8 @@ export default function SyncManager({
                   </div>
 
                   <p className="text-[11px] text-zinc-500 leading-relaxed">
-                    Qualquer pessoa que digitar o código{" "}
-                    <strong className="text-zinc-700 font-mono">{syncCode}</strong> nesta tela
-                    passará a compartilhar os dados financeiros com você.
+                    Qualquer pessoa que digitar <strong className="text-zinc-700 font-mono">{syncCode}</strong>{" "}
+                    nesta tela compartilhará os dados em <span className="text-emerald-600 font-bold">tempo real</span>.
                   </p>
 
                   <div className="flex items-center gap-2 text-[11px] font-semibold text-zinc-500">
@@ -254,8 +281,8 @@ export default function SyncManager({
                     Desconectar
                   </button>
                 </>
-              ) : (
-                /* Estado: Desconectado */
+              ) : configured ? (
+                /* Estado: Desconectado, Firebase configurado */
                 <>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">
@@ -291,9 +318,7 @@ export default function SyncManager({
                       <div className="w-full border-t border-zinc-100" />
                     </div>
                     <div className="relative flex justify-center">
-                      <span className="bg-white px-2 text-[10px] text-zinc-400 uppercase tracking-wider">
-                        ou
-                      </span>
+                      <span className="bg-white px-2 text-[10px] text-zinc-400 uppercase tracking-wider">ou</span>
                     </div>
                   </div>
 
@@ -311,11 +336,10 @@ export default function SyncManager({
                   </button>
 
                   <p className="text-[10px] text-zinc-400 leading-relaxed text-center">
-                    No modo local, seus dados ficam apenas neste navegador.
-                    Ative o compartilhamento para sincronizar com outra pessoa.
+                    Sincronização em tempo real via Firebase. Funciona no Netlify, mobile e APK.
                   </p>
                 </>
-              )}
+              ) : null}
             </div>
           </motion.div>
         )}

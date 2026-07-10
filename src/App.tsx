@@ -374,7 +374,7 @@ export default function App() {
       )}
       
       {/* HEADER DE NAVEGAÇÃO DE MESES */}
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-zinc-200/60 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 w-full max-w-full overflow-hidden">
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-zinc-200/60 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 w-full max-w-full overflow-x-clip">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <div className="p-2 bg-zinc-900 text-white rounded-lg shadow-xs shrink-0">
             <Coins className="w-4.5 h-4.5 shrink-0 text-emerald-400" />
